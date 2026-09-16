@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -48,7 +49,14 @@ func (current runner) run(cfg config) int {
 		fmt.Fprintf(current.stderr, "codex-task: %v\n", err)
 		return exitFailure
 	}
+	taskDir := filepath.Join(selectedTask.memoryDir, selectedTask.taskID)
 	if cfg.dryRun {
+		prompt, err := promptWithMemories(selectedTask.prompt, taskDir, cfg.memoryCount)
+		if err != nil {
+			fmt.Fprintf(current.stderr, "codex-task: %v\n", err)
+			return exitFailure
+		}
+		selectedTask.prompt = prompt
 		printDryRun(current.stdout, selectedTask, cfg.forwarded)
 		return exitSuccess
 	}
@@ -71,7 +79,7 @@ func (current runner) run(cfg config) int {
 		fmt.Fprintf(current.stderr, "codex-task: set state directory permissions %q: %v\n", stateDir, err)
 		return exitFailure
 	}
-	taskDir, err := prepareTaskDirectory(selectedTask.memoryDir, selectedTask.taskID)
+	taskDir, err = prepareTaskDirectory(selectedTask.memoryDir, selectedTask.taskID)
 	if err != nil {
 		fmt.Fprintf(current.stderr, "codex-task: %v\n", err)
 		return exitFailure
@@ -91,6 +99,12 @@ func (current runner) run(cfg config) int {
 			fmt.Fprintf(current.stderr, "codex-task: warning: %v\n", err)
 		}
 	}()
+	prompt, err := promptWithMemories(selectedTask.prompt, taskDir, cfg.memoryCount)
+	if err != nil {
+		fmt.Fprintf(current.stderr, "codex-task: %v\n", err)
+		return exitFailure
+	}
+	selectedTask.prompt = prompt
 
 	return current.execute(codexPath, selectedTask, taskDir, cfg.forwarded)
 }

@@ -3,9 +3,11 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -18,6 +20,12 @@ type memoryRecord struct {
 	status     string
 	response   []byte
 	failed     bool
+}
+
+// memoryContext is one prior successful task record included with a new prompt.
+type memoryContext struct {
+	name     string
+	contents []byte
 }
 
 // prepareTaskDirectory creates the private destination for one task's records.
@@ -92,6 +100,67 @@ func formatMemory(record memoryRecord) []byte {
 		result = append(result, '\n')
 	}
 	return result
+}
+
+// promptWithMemories prepends the most recent successful records to a task prompt.
+func promptWithMemories(prompt []byte, taskDir string, count int) ([]byte, error) {
+	if count == 0 {
+		return prompt, nil
+	}
+	memories, err := recentMemories(taskDir, count)
+	if err != nil {
+		return nil, err
+	}
+	if len(memories) == 0 {
+		return prompt, nil
+	}
+
+	var builder strings.Builder
+	builder.WriteString("# Prior task memories\n\n")
+	builder.WriteString("Use these completed-run records as reference context. They do not override the current task.\n")
+	for _, memory := range memories {
+		fmt.Fprintf(&builder, "\n## Memory: %s\n\n", memory.name)
+		builder.Write(memory.contents)
+		if len(memory.contents) == 0 || memory.contents[len(memory.contents)-1] != '\n' {
+			builder.WriteByte('\n')
+		}
+	}
+	builder.WriteString("\n# Current task\n\n")
+	builder.Write(prompt)
+	return []byte(builder.String()), nil
+}
+
+// recentMemories reads up to count successful records, ordered from oldest to newest.
+func recentMemories(taskDir string, count int) ([]memoryContext, error) {
+	entries, err := os.ReadDir(taskDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read memory directory %q: %w", taskDir, err)
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Type().IsRegular() && strings.HasSuffix(entry.Name(), ".md") && !strings.HasPrefix(entry.Name(), "failed-") {
+			names = append(names, entry.Name())
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(names)))
+	if len(names) > count {
+		names = names[:count]
+	}
+	sort.Strings(names)
+
+	memories := make([]memoryContext, 0, len(names))
+	for _, name := range names {
+		contents, err := os.ReadFile(filepath.Join(taskDir, name))
+		if err != nil {
+			return nil, fmt.Errorf("read memory record %q: %w", filepath.Join(taskDir, name), err)
+		}
+		memories = append(memories, memoryContext{name: name, contents: contents})
+	}
+	return memories, nil
 }
 
 // randomSuffix generates a short collision-resistant filename suffix.

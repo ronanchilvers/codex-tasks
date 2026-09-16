@@ -19,7 +19,7 @@ binary for each operating system and architecture.
 ## Usage
 
 ```text
-codex-task --prompt PATH [--memory-dir PATH] [--dry-run] [-- CODEX_OPTIONS...]
+codex-task --prompt PATH [--memory-dir PATH] [--memory-count N] [--dry-run] [-- CODEX_OPTIONS...]
 ```
 
 - `--prompt PATH` is required. Relative paths use the invocation's current
@@ -27,6 +27,9 @@ codex-task --prompt PATH [--memory-dir PATH] [--dry-run] [-- CODEX_OPTIONS...]
   a `task_id` in leading YAML front matter.
 - `--memory-dir PATH` chooses the record root. Relative paths use the invocation
   directory. The default is `memories/` beside the canonical prompt.
+- `--memory-count N` prepends the most recent `N` successful records for the
+  task to the prompt, in chronological order. It defaults to `3`; use `0` to
+  disable memory injection.
 - `--dry-run` prints resolved paths, exact prompt bytes, and a quoted command
   preview. It does not find or launch Codex and creates no directories or files.
 - Arguments after `--` are passed directly to `codex exec`. For example:
@@ -48,15 +51,9 @@ agent response. Successful files use a timestamp and unique suffix. Records
 from failed Codex runs have a `failed-` prefix when a final response is
 available. The absolute saved path is reported on standard error.
 
-A later prompt can refer to a record explicitly:
-
-```text
-Read /srv/memories/<task-id>/<saved-run>.md for the previous review.
-Check whether the issues identified in that review have been resolved.
-```
-
-The record must be readable within that later Codex session's allowed
-workspace. `codex-task` does not inject memories automatically.
+Before each run, the wrapper automatically prepends the selected successful
+records as prior-task context. Failed-run records are not injected. The records
+must be readable by the wrapper process.
 
 Set a stable task identifier in leading YAML front matter to preserve memory
 and locking identity when a prompt is renamed or moved. `model` and `effort`

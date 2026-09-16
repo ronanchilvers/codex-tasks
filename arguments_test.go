@@ -10,18 +10,26 @@ import (
 func TestParseArguments(t *testing.T) {
 	var output bytes.Buffer
 	cfg, help, err := parseArguments([]string{
-		"--prompt", "prompt with spaces.md", "--memory-dir=memory", "--dry-run", "--",
+		"--prompt", "prompt with spaces.md", "--memory-dir=memory", "--memory-count", "5", "--dry-run", "--",
 		"--model", "a model", "--config", `value='quoted;$(ignored)'`,
 	}, &output)
 	if err != nil || help {
 		t.Fatalf("parseArguments() = help %v, error %v", help, err)
 	}
-	if cfg.promptPath != "prompt with spaces.md" || cfg.memoryDir != "memory" || !cfg.dryRun {
+	if cfg.promptPath != "prompt with spaces.md" || cfg.memoryDir != "memory" || cfg.memoryCount != 5 || !cfg.dryRun {
 		t.Fatalf("unexpected config: %#v", cfg)
 	}
 	want := []string{"--model", "a model", "--config", `value='quoted;$(ignored)'`}
 	if strings.Join(cfg.forwarded, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("forwarded arguments = %#v, want %#v", cfg.forwarded, want)
+	}
+}
+
+// TestParseArgumentsMemoryCountDefault verifies memory injection has a useful default.
+func TestParseArgumentsMemoryCountDefault(t *testing.T) {
+	cfg, help, err := parseArguments([]string{"--prompt", "one.md"}, &bytes.Buffer{})
+	if err != nil || help || cfg.memoryCount != defaultMemoryCount {
+		t.Fatalf("memory count = %d, help %v, error %v", cfg.memoryCount, help, err)
 	}
 }
 
@@ -36,6 +44,7 @@ func TestParseArgumentsUsageErrors(t *testing.T) {
 		{"--prompt", "one.md", "--", "--output-last-message"},
 		{"--prompt", "one.md", "--", "--output-last-message=out"},
 		{"--prompt", "one.md", "--", "--"},
+		{"--prompt", "one.md", "--memory-count", "-1"},
 	}
 	for _, args := range tests {
 		if _, _, err := parseArguments(args, &bytes.Buffer{}); err == nil {

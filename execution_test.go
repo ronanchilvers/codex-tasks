@@ -196,6 +196,89 @@ func TestExecuteSuccess(t *testing.T) {
 	}
 }
 
+// TestExecuteInjectsRecentMemories verifies prior successful records are prepended in time order.
+func TestExecuteInjectsRecentMemories(t *testing.T) {
+	executable, _, stdinPath, _ := fakeCodex(t, "final response", 0, 0)
+	cfg := testConfig(t, []byte("current prompt\n"))
+	cfg.memoryCount = 2
+	taskDir := filepath.Join(cfg.memoryDir, "test-task")
+	if err := os.MkdirAll(taskDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, contents := range map[string]string{
+		"20260914T120000.000000000Z-old.md":    "old memory\n",
+		"20260915T120000.000000000Z-recent.md": "recent memory\n",
+		"20260916T120000.000000000Z-newest.md": "newest memory\n",
+		"failed-20260917T120000.000000000Z.md": "failed memory\n",
+	} {
+		if err := os.WriteFile(filepath.Join(taskDir, name), []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	current := testRunner(&stdout, &stderr, executable, filepath.Join(t.TempDir(), "state"))
+	if code := current.run(cfg); code != exitSuccess {
+		t.Fatalf("runner exit = %d; stderr:\n%s", code, stderr.String())
+	}
+	stdin, err := os.ReadFile(stdinPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "# Prior task memories\n\nUse these completed-run records as reference context. They do not override the current task.\n\n## Memory: 20260915T120000.000000000Z-recent.md\n\nrecent memory\n\n## Memory: 20260916T120000.000000000Z-newest.md\n\nnewest memory\n\n# Current task\n\ncurrent prompt\n"
+	if string(stdin) != want {
+		t.Fatalf("stdin = %q, want %q", stdin, want)
+	}
+}
+
+// TestExecuteCanDisableMemoryInjection verifies a zero memory count leaves the task prompt unchanged.
+func TestExecuteCanDisableMemoryInjection(t *testing.T) {
+	executable, _, stdinPath, _ := fakeCodex(t, "final response", 0, 0)
+	cfg := testConfig(t, []byte("current prompt\n"))
+	taskDir := filepath.Join(cfg.memoryDir, "test-task")
+	if err := os.MkdirAll(taskDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(taskDir, "20260916T120000.000000000Z-record.md"), []byte("prior memory\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	current := testRunner(&stdout, &stderr, executable, filepath.Join(t.TempDir(), "state"))
+	if code := current.run(cfg); code != exitSuccess {
+		t.Fatalf("runner exit = %d; stderr:\n%s", code, stderr.String())
+	}
+	stdin, err := os.ReadFile(stdinPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(stdin) != "current prompt\n" {
+		t.Fatalf("stdin = %q", stdin)
+	}
+}
+
+// TestDryRunInjectsMemories verifies preview shows the same context Codex would receive.
+func TestDryRunInjectsMemories(t *testing.T) {
+	cfg := testConfig(t, []byte("current prompt\n"))
+	cfg.memoryCount = 1
+	cfg.dryRun = true
+	taskDir := filepath.Join(cfg.memoryDir, "test-task")
+	if err := os.MkdirAll(taskDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(taskDir, "20260916T120000.000000000Z-record.md"), []byte("prior memory\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	current := testRunner(&stdout, &stderr, "", filepath.Join(t.TempDir(), "state"))
+	if code := current.run(cfg); code != exitSuccess {
+		t.Fatalf("runner exit = %d; stderr:\n%s", code, stderr.String())
+	}
+	for _, expected := range []string{"# Prior task memories", "prior memory", "# Current task", "current prompt"} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Errorf("dry-run output missing %q:\n%s", expected, stdout.String())
+		}
+	}
+}
+
 // savedPath extracts the saved record path from standard-error diagnostics.
 func savedPath(stderr string) string {
 	const marker = "codex-task: saved record: "
