@@ -12,3 +12,4 @@
 # Keep the examples directory, without tracking its contents.
 /examples/*
 !/examples/.gitkeep
+!/examples/task-runner-smoke-test.md
