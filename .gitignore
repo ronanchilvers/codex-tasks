@@ -1,0 +1,14 @@
+# Local task execution records
+/memories/
+
+# Go build and test artifacts
+/codex-task
+*.test
+*.out
+
+# Operating-system metadata
+.DS_Store
+
+# Keep the examples directory, without tracking its contents.
+/examples/*
+!/examples/.gitkeep
