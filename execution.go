@@ -44,6 +44,10 @@ func (current runner) run(cfg config) int {
 		fmt.Fprintf(current.stderr, "codex-task: %v\n", err)
 		return exitFailure
 	}
+	if err := validateTaskOptions(selectedTask, cfg.forwarded); err != nil {
+		fmt.Fprintf(current.stderr, "codex-task: %v\n", err)
+		return exitFailure
+	}
 	if cfg.dryRun {
 		printDryRun(current.stdout, selectedTask, cfg.forwarded)
 		return exitSuccess
@@ -91,6 +95,53 @@ func (current runner) run(cfg config) int {
 	return current.execute(codexPath, selectedTask, taskDir, cfg.forwarded)
 }
 
+// validateTaskOptions rejects duplicate Codex settings from task metadata and forwarded arguments.
+func validateTaskOptions(selectedTask task, forwarded []string) error {
+	for index, argument := range forwarded {
+		if selectedTask.model != "" && isModelOption(argument) {
+			return errors.New("front matter model conflicts with forwarded --model; remove one")
+		}
+		if selectedTask.effort == "" {
+			continue
+		}
+		if configValue, found := forwardedConfigValue(forwarded, index, argument); found && isReasoningEffortConfig(configValue) {
+			return errors.New("front matter effort conflicts with forwarded model_reasoning_effort configuration; remove one")
+		}
+	}
+	return nil
+}
+
+// isModelOption reports whether argument selects a Codex model.
+func isModelOption(argument string) bool {
+	return argument == "--model" || strings.HasPrefix(argument, "--model=") || argument == "-m" || strings.HasPrefix(argument, "-m=") || strings.HasPrefix(argument, "-m") && len(argument) > len("-m")
+}
+
+// forwardedConfigValue returns the value supplied by one forwarded config option.
+func forwardedConfigValue(arguments []string, index int, argument string) (string, bool) {
+	if argument == "--config" || argument == "-c" {
+		if index+1 < len(arguments) {
+			return arguments[index+1], true
+		}
+		return "", false
+	}
+	if value, found := strings.CutPrefix(argument, "--config="); found {
+		return value, true
+	}
+	if value, found := strings.CutPrefix(argument, "-c="); found {
+		return value, true
+	}
+	if strings.HasPrefix(argument, "-c") && len(argument) > len("-c") {
+		return argument[len("-c"):], true
+	}
+	return "", false
+}
+
+// isReasoningEffortConfig reports whether configValue sets Codex's reasoning effort key.
+func isReasoningEffortConfig(configValue string) bool {
+	key, _, found := strings.Cut(configValue, "=")
+	return found && strings.TrimSpace(key) == "model_reasoning_effort"
+}
+
 // execute invokes Codex, captures its final response, and persists an appropriate record.
 func (current runner) execute(codexPath string, selectedTask task, taskDir string, forwarded []string) int {
 	capture, err := os.CreateTemp(taskDir, ".capture-*.tmp")
@@ -118,7 +169,7 @@ func (current runner) execute(codexPath string, selectedTask task, taskDir strin
 	}()
 
 	started := current.now().UTC()
-	command := exec.Command(codexPath, commandArguments(forwarded, capturePath)...)
+	command := exec.Command(codexPath, commandArguments(selectedTask, forwarded, capturePath)...)
 	command.Dir = selectedTask.workDir
 	command.Env = os.Environ()
 	command.Stdin = bytes.NewReader(selectedTask.prompt)

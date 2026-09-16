@@ -23,8 +23,8 @@ codex-task --prompt PATH [--memory-dir PATH] [--dry-run] [-- CODEX_OPTIONS...]
 ```
 
 - `--prompt PATH` is required. Relative paths use the invocation's current
-  working directory. Symbolic links are resolved before task identity is
-  calculated. The file must be regular, readable, and nonempty.
+  working directory. The file must be regular, readable, nonempty, and declare
+  a `task_id` in leading YAML front matter.
 - `--memory-dir PATH` chooses the record root. Relative paths use the invocation
   directory. The default is `memories/` beside the canonical prompt.
 - `--dry-run` prints resolved paths, exact prompt bytes, and a quoted command
@@ -58,11 +58,32 @@ Check whether the issues identified in that review have been resolved.
 The record must be readable within that later Codex session's allowed
 workspace. `codex-task` does not inject memories automatically.
 
+Set a stable task identifier in leading YAML front matter to preserve memory
+and locking identity when a prompt is renamed or moved. `model` and `effort`
+are optional Codex settings:
+
+```markdown
+---
+model: gpt-5.6-luna
+effort: high
+task_id: daily-code-review
+---
+
+Review the repository for changes that need attention.
+```
+
+Task IDs are required and may contain 1 to 128 letters, digits, hyphens, or
+underscores. The front-matter block is not sent to Codex. `model` is passed as
+`--model`; `effort` is passed as Codex's `model_reasoning_effort` setting. If
+the same setting is also given after `--`, the wrapper fails before Codex
+starts and asks you to remove one. A prompt without a `task_id` fails before
+Codex starts and prints the required snippet.
+
 ## Locking and failures
 
-The canonical absolute prompt path identifies a task. Cooperating invocations
-by one operating-system user on one host use a nonblocking advisory lock in the
-user state directory. On Linux this is `$XDG_STATE_HOME/codex-task`, where XDG
+The front-matter `task_id` identifies a task. Cooperating invocations by one
+operating-system user on one host use a nonblocking advisory lock in the user
+state directory. On Linux this is `$XDG_STATE_HOME/codex-task`, where XDG
 means Cross-Desktop Group, or `$HOME/.local/state/codex-task` when that variable
 is unset. On macOS it is `$HOME/Library/Application Support/codex-task`.
 Different prompts may run concurrently. A duplicate is skipped rather than

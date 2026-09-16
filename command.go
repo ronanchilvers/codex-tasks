@@ -3,15 +3,22 @@ package main
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 )
 
 const outputPlaceholder = "<temporary-output-file>"
 
 // commandArguments builds the exact argument vector used for preview or execution.
-func commandArguments(forwarded []string, outputPath string) []string {
+func commandArguments(current task, forwarded []string, outputPath string) []string {
 	args := []string{"exec"}
 	args = append(args, forwarded...)
+	if current.model != "" {
+		args = append(args, "--model", current.model)
+	}
+	if current.effort != "" {
+		args = append(args, "--config", "model_reasoning_effort="+strconv.Quote(current.effort))
+	}
 	args = append(args, "--output-last-message", outputPath, "-")
 	return args
 }
@@ -31,7 +38,7 @@ func printDryRun(output io.Writer, current task, forwarded []string) {
 	fmt.Fprintln(output, "----- END PROMPT -----")
 	fmt.Fprintln(output, "Command (display only; no shell is used):")
 	parts := []string{quoteArgument("codex")}
-	for _, arg := range commandArguments(forwarded, outputPlaceholder) {
+	for _, arg := range commandArguments(current, forwarded, outputPlaceholder) {
 		parts = append(parts, quoteArgument(arg))
 	}
 	fmt.Fprintln(output, strings.Join(parts, " "))

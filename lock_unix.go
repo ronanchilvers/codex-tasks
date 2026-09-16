@@ -10,7 +10,7 @@ import (
 	"syscall"
 )
 
-// taskLock holds an operating-system advisory lock for one canonical prompt path.
+// taskLock holds an operating-system advisory lock for one task ID.
 type taskLock struct {
 	file *os.File
 }

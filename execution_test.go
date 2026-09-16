@@ -77,13 +77,65 @@ func testRunner(stdout, stderr *bytes.Buffer, executable, stateDir string) runne
 
 // testConfig creates a prompt and returns a configuration for an isolated run.
 func testConfig(t *testing.T, prompt []byte) config {
+	return testConfigWithFrontMatter(t, "task_id: test-task", prompt)
+}
+
+// testConfigWithFrontMatter creates a prompt with task front matter and returns an isolated run configuration.
+func testConfigWithFrontMatter(t *testing.T, frontMatter string, prompt []byte) config {
 	t.Helper()
 	directory := t.TempDir()
 	promptPath := filepath.Join(directory, "prompt.md")
+	prompt = append([]byte("---\n"+frontMatter+"\n---\n"), prompt...)
 	if err := os.WriteFile(promptPath, prompt, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return config{promptPath: promptPath, memoryDir: filepath.Join(directory, "memories")}
+}
+
+// TestExecuteAppliesFrontMatterModelOptions verifies prompt metadata controls Codex model settings.
+func TestExecuteAppliesFrontMatterModelOptions(t *testing.T) {
+	executable, argsPath, _, _ := fakeCodex(t, "final response", 0, 0)
+	cfg := testConfigWithFrontMatter(t, "model: gpt-5.6-luna\neffort: high\ntask_id: test-task", []byte("prompt"))
+	cfg.forwarded = []string{"--sandbox", "workspace-write"}
+	var stdout, stderr bytes.Buffer
+	current := testRunner(&stdout, &stderr, executable, filepath.Join(t.TempDir(), "state"))
+	if code := current.run(cfg); code != exitSuccess {
+		t.Fatalf("runner exit = %d; stderr:\n%s", code, stderr.String())
+	}
+	arguments, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"exec", "--sandbox", "workspace-write", "--model", "gpt-5.6-luna",
+		"--config", `model_reasoning_effort="high"`, "--output-last-message",
+	}
+	argumentLines := strings.Split(strings.TrimSuffix(string(arguments), "\n"), "\n")
+	if len(argumentLines) != len(want)+2 || strings.Join(argumentLines[:len(want)], "\x00") != strings.Join(want, "\x00") || argumentLines[len(argumentLines)-1] != "-" {
+		t.Fatalf("arguments = %#v, want prefix %#v followed by output path and -", argumentLines, want)
+	}
+}
+
+// TestExecuteRejectsConflictingFrontMatterModelOptions verifies duplicate Codex settings fail before execution.
+func TestExecuteRejectsConflictingFrontMatterModelOptions(t *testing.T) {
+	executable, _, _, _ := fakeCodex(t, "final response", 0, 0)
+	for name, forwarded := range map[string][]string{
+		"model":  {"--model", "forwarded-model"},
+		"effort": {"--config=model_reasoning_effort=low"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := testConfigWithFrontMatter(t, "model: gpt-5.6-luna\neffort: high\ntask_id: test-task", []byte("prompt"))
+			cfg.forwarded = forwarded
+			var stdout, stderr bytes.Buffer
+			current := testRunner(&stdout, &stderr, executable, filepath.Join(t.TempDir(), "state"))
+			if code := current.run(cfg); code != exitFailure {
+				t.Fatalf("runner exit = %d, want %d", code, exitFailure)
+			}
+			if !strings.Contains(stderr.String(), "front matter") {
+				t.Fatalf("stderr = %q", stderr.String())
+			}
+		})
+	}
 }
 
 // TestExecuteSuccess verifies exact process input, streaming, capture, and persisted metadata.
@@ -126,6 +178,9 @@ func TestExecuteSuccess(t *testing.T) {
 		t.Fatalf("child cwd = %q, want %q", strings.TrimSpace(string(cwd)), wantDirectory)
 	}
 	recordPath := savedPath(stderr.String())
+	if filepath.Base(filepath.Dir(recordPath)) != "test-task" {
+		t.Fatalf("record task directory = %q", filepath.Dir(recordPath))
+	}
 	record, err := os.ReadFile(recordPath)
 	if err != nil {
 		t.Fatal(err)

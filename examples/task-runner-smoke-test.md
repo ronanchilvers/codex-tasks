@@ -1,3 +1,8 @@
+---
+task_id: task-runner-smoke-test
+model: gpt-5.6-luna
+effort: low
+---
 # Task runner smoke test
 
 Look for saved task records under `examples/memories/`. If records exist, read

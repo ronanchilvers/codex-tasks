@@ -85,7 +85,7 @@ func printUsage(output io.Writer, flags *flag.FlagSet) {
 	fmt.Fprintln(output, "Usage: codex-task --prompt PATH [--memory-dir PATH] [--dry-run] [-- CODEX_OPTIONS...]")
 	fmt.Fprintln(output)
 	fmt.Fprintln(output, "Runs one prompt through `codex exec`, skips overlapping runs of the same")
-	fmt.Fprintln(output, "canonical prompt path, and saves the final response as Markdown.")
+	fmt.Fprintln(output, "front-matter task_id, and saves the final response as Markdown.")
 	fmt.Fprintln(output)
 	fmt.Fprintln(output, "Wrapper flags:")
 	flags.PrintDefaults()
